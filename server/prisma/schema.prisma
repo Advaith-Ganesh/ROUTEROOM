@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TripRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum ActivityStatus {
+  PLANNED
+  CONFIRMED
+  CANCELLED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions       Session[]
+  ownedTrips     Trip[]           @relation("TripOwner")
+  tripMemberships TripMember[]
+  paidExpenses   Expense[]        @relation("ExpensePayer")
+  expenseShares  ExpenseParticipant[]
+
+  @@map("users")
+}
+
+/// Refresh-token backed session, so logout / token theft can revoke access
+/// without waiting for a short-lived JWT to expire on its own.
+model Session {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash  String   @unique
+  userAgent         String?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Trip {
+  id                String   @id @default(uuid())
+  name              String
+  destinationName   String
+  destinationLat    Float
+  destinationLon    Float
+  startDate         DateTime @db.Date
+  endDate           DateTime @db.Date
+  ownerId           String
+  owner             User     @relation("TripOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  members    TripMember[]
+  places     Place[]
+  activities Activity[]
+  expenses   Expense[]
+
+  @@index([ownerId])
+  @@map("trips")
+}
+
+/// Membership + role for every user who can see a trip, including the owner
+/// (so "trips visible to user" is a single join instead of two code paths).
+model TripMember {
+  id        String   @id @default(uuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      TripRole
+  createdAt DateTime @default(now())
+
+  @@unique([tripId, userId])
+  @@index([userId])
+  @@map("trip_members")
+}
+
+/// A place saved to a trip. Populated from a geocoding search result once,
+/// then reused by every activity that references it -- we don't re-query
+/// Nominatim for a place we've already stored.
+model Place {
+  id         String   @id @default(uuid())
+  tripId     String
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  externalId String?
+  name       String
+  address    String?
+  category   String?
+  lat        Float
+  lon        Float
+  source     String   @default("nominatim")
+  createdAt  DateTime @default(now())
+
+  activities Activity[]
+
+  @@index([tripId])
+  @@map("places")
+}
+
+model Activity {
+  id         String         @id @default(uuid())
+  tripId     String
+  trip       Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  placeId    String
+  place      Place          @relation(fields: [placeId], references: [id], onDelete: Restrict)
+  date       DateTime       @db.Date
+  startTime  DateTime
+  endTime    DateTime?
+  notes      String?
+  category   String?
+  status     ActivityStatus @default(PLANNED)
+  orderIndex Int            @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([tripId, date])
+  @@map("activities")
+}
+
+model Expense {
+  id           String   @id @default(uuid())
+  tripId       String
+  trip         Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  description  String
+  amountCents  Int
+  currency     String   @default("GBP")
+  paidByUserId String
+  paidBy       User     @relation("ExpensePayer", fields: [paidByUserId], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  participants ExpenseParticipant[]
+
+  @@index([tripId])
+  @@map("expenses")
+}
+
+model ExpenseParticipant {
+  id         String  @id @default(uuid())
+  expenseId  String
+  expense    Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shareCents Int
+
+  @@unique([expenseId, userId])
+  @@map("expense_participants")
+}
+
+/// Simple DB-backed caches for external API responses. These exist purely
+/// to be polite to free public services (Nominatim in particular asks
+/// clients not to hammer it) -- not a general-purpose caching layer, so no
+/// Redis: a table with a TTL check in the service is enough for this scale.
+model GeocodeCache {
+  id         String   @id @default(uuid())
+  query      String   @unique
+  resultsJson Json
+  fetchedAt  DateTime @default(now())
+
+  @@map("geocode_cache")
+}
+
+model RouteCache {
+  id          String   @id @default(uuid())
+  cacheKey    String   @unique
+  durationSec Float
+  distanceM   Float
+  fetchedAt   DateTime @default(now())
+
+  @@map("route_cache")
+}
+
+model WeatherCache {
+  id        String   @id @default(uuid())
+  cacheKey  String   @unique
+  dataJson  Json
+  fetchedAt DateTime @default(now())
+
+  @@map("weather_cache")
+}

@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: routeroom
+      POSTGRES_PASSWORD: routeroom
+      POSTGRES_DB: routeroom
+    ports:
+      - '5432:5432'
+    volumes:
+      - routeroom_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U routeroom']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://routeroom:routeroom@db:5432/routeroom?schema=public
+      JWT_SECRET: ${JWT_SECRET:-replace_with_a_long_random_string}
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-https://routing.openstreetmap.de}
+      OPEN_METEO_BASE_URL: ${OPEN_METEO_BASE_URL:-https://api.open-meteo.com}
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./server:/app
+      - server_node_modules:/app/node_modules
+
+  client:
+    build:
+      context: ./client
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./client:/app
+      - client_node_modules:/app/node_modules
+
+volumes:
+  routeroom_db_data:
+  server_node_modules:
+  client_node_modules:

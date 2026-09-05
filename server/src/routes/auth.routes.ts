@@ -1,0 +1,99 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+import { requireAuth } from '../middleware/auth.js';
+import { prisma } from '../lib/prisma.js';
+import {
+  accessTokenCookie,
+  createSession,
+  refreshTokenCookie,
+  registerUser,
+  revokeSession,
+  rotateSession,
+  signAccessToken,
+  verifyCredentials,
+} from '../services/auth.service.js';
+import { HttpError } from '../utils/httpError.js';
+
+export const authRouter = Router();
+
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  name: z.string().min(1).max(100),
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+function issueTokens(res: import('express').Response, userId: string, email: string, userAgent?: string) {
+  return createSession(userId, userAgent).then((refreshToken) => {
+    const accessToken = signAccessToken({ sub: userId, email });
+    res.cookie(accessTokenCookie.name, accessToken, accessTokenCookie.options);
+    res.cookie(refreshTokenCookie.name, refreshToken, refreshTokenCookie.options);
+  });
+}
+
+authRouter.post(
+  '/register',
+  asyncHandler(async (req, res) => {
+    const input = registerSchema.parse(req.body);
+    const user = await registerUser(input.email, input.password, input.name);
+    await issueTokens(res, user.id, user.email, req.headers['user-agent']);
+    res.status(201).json({ user });
+  }),
+);
+
+authRouter.post(
+  '/login',
+  asyncHandler(async (req, res) => {
+    const input = loginSchema.parse(req.body);
+    const user = await verifyCredentials(input.email, input.password);
+    await issueTokens(res, user.id, user.email, req.headers['user-agent']);
+    res.json({ user: { id: user.id, email: user.email, name: user.name } });
+  }),
+);
+
+authRouter.post(
+  '/refresh',
+  asyncHandler(async (req, res) => {
+    const rawRefreshToken = req.cookies?.refresh_token as string | undefined;
+    if (!rawRefreshToken) {
+      throw HttpError.unauthorized();
+    }
+    const { user, newRawToken } = await rotateSession(rawRefreshToken, req.headers['user-agent']);
+    const accessToken = signAccessToken({ sub: user.id, email: user.email });
+    res.cookie(accessTokenCookie.name, accessToken, accessTokenCookie.options);
+    res.cookie(refreshTokenCookie.name, newRawToken, refreshTokenCookie.options);
+    res.json({ user: { id: user.id, email: user.email, name: user.name } });
+  }),
+);
+
+authRouter.post(
+  '/logout',
+  asyncHandler(async (req, res) => {
+    const rawRefreshToken = req.cookies?.refresh_token as string | undefined;
+    if (rawRefreshToken) {
+      await revokeSession(rawRefreshToken);
+    }
+    const { maxAge: _accessMaxAge, ...accessClearOptions } = accessTokenCookie.options;
+    const { maxAge: _refreshMaxAge, ...refreshClearOptions } = refreshTokenCookie.options;
+    res.clearCookie(accessTokenCookie.name, accessClearOptions);
+    res.clearCookie(refreshTokenCookie.name, refreshClearOptions);
+    res.status(204).send();
+  }),
+);
+
+authRouter.get(
+  '/me',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: req.user!.id },
+      select: { id: true, email: true, name: true, createdAt: true },
+    });
+    res.json({ user });
+  }),
+);
