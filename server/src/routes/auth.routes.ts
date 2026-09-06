@@ -17,14 +17,24 @@ import { HttpError } from '../utils/httpError.js';
 
 export const authRouter = Router();
 
+// Emails are case-insensitive per RFC 5321 in practice, and the unique
+// constraint on User.email is case-sensitive at the DB level -- normalizing
+// here is what actually enforces "one account per email address" and lets
+// a user log back in regardless of how they capitalize it.
+const normalizedEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email('Invalid email address');
+
 const registerSchema = z.object({
-  email: z.string().email(),
+  email: normalizedEmail,
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  name: z.string().min(1).max(100),
+  name: z.string().trim().min(1, 'Name is required').max(100),
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: normalizedEmail,
   password: z.string().min(1),
 });
 

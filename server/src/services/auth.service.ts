@@ -25,7 +25,8 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   return jwt.verify(token, env.JWT_SECRET) as AccessTokenPayload;
 }
 
-export async function registerUser(email: string, password: string, name: string) {
+export async function registerUser(rawEmail: string, password: string, name: string) {
+  const email = rawEmail.trim().toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     throw HttpError.conflict('An account with this email already exists');
@@ -37,7 +38,8 @@ export async function registerUser(email: string, password: string, name: string
   });
 }
 
-export async function verifyCredentials(email: string, password: string) {
+export async function verifyCredentials(rawEmail: string, password: string) {
+  const email = rawEmail.trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     throw HttpError.unauthorized('Invalid email or password');

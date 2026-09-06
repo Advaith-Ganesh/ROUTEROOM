@@ -25,6 +25,22 @@ describe('auth', () => {
     expect(res.status).toBe(409);
   });
 
+  it('treats email as case-insensitive for both uniqueness and login', async () => {
+    const app = buildApp();
+    await createTestUser(app, { email: 'Mixed.Case@Example.com', password: 'password123' });
+
+    const duplicate = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'mixed.case@example.com', password: 'password123', name: 'Someone Else' });
+    expect(duplicate.status).toBe(409);
+
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: '  MIXED.CASE@EXAMPLE.COM  ', password: 'password123' });
+    expect(login.status).toBe(200);
+    expect(login.body.user.email).toBe('mixed.case@example.com');
+  });
+
   it('rejects registration with a short password', async () => {
     const app = buildApp();
     const res = await request(app)
