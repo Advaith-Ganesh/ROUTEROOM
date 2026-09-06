@@ -63,6 +63,25 @@ describe('expenses API', () => {
     expect(res.status).toBe(201);
   });
 
+  it('rejects a custom split with a negative individual share', async () => {
+    const app = buildApp();
+    const alice = await createTestUser(app, { email: 'alice3b@example.com' });
+    const bob = await createTestUser(app, { email: 'bob3b@example.com' });
+    const trip = await createTestTrip(alice);
+    await alice.agent.post(`/api/trips/${trip.id}/members`).send({ email: bob.email, role: 'EDITOR' });
+
+    const res = await alice.agent.post(`/api/trips/${trip.id}/expenses`).send({
+      description: 'Taxi',
+      amountCents: 2000,
+      paidByUserId: alice.id,
+      participants: [
+        { userId: alice.id, shareCents: 2500 },
+        { userId: bob.id, shareCents: -500 },
+      ],
+    });
+    expect(res.status).toBe(400);
+  });
+
   it('rejects a custom split whose shares do not sum to the total', async () => {
     const app = buildApp();
     const alice = await createTestUser(app, { email: 'alice4@example.com' });

@@ -145,4 +145,37 @@ describe('activities / itinerary CRUD', () => {
     expect(byId[first.body.activity.id]).toBe(1);
     expect(byId[second.body.activity.id]).toBe(0);
   });
+
+  it('ignores an activity id from a different trip when reordering', async () => {
+    const app = buildApp();
+    const owner = await createTestUser(app);
+    const tripA = await createTestTrip(owner, { name: 'Trip A', startDate: '2027-02-01', endDate: '2027-02-05' });
+    const tripB = await createTestTrip(owner, { name: 'Trip B', startDate: '2027-02-01', endDate: '2027-02-05' });
+    const placeA = await createTestPlace(owner, tripA.id);
+    const placeB = await createTestPlace(owner, tripB.id);
+
+    const inTripA = await owner.agent.post(`/api/trips/${tripA.id}/activities`).send({
+      placeId: placeA.id,
+      date: '2027-02-02',
+      startTime: '09:00',
+    });
+    const inTripB = await owner.agent.post(`/api/trips/${tripB.id}/activities`).send({
+      placeId: placeB.id,
+      date: '2027-02-02',
+      startTime: '09:00',
+    });
+
+    // Attempting to reorder tripB's activity through tripA's endpoint must not
+    // touch it -- the update is scoped by tripId at the database level.
+    await owner.agent.post(`/api/trips/${tripA.id}/activities/reorder`).send({
+      order: [{ id: inTripB.body.activity.id, orderIndex: 5 }],
+    });
+
+    const unchanged = await owner.agent.get(`/api/trips/${tripB.id}/activities`);
+    expect(unchanged.body.activities[0].orderIndex).toBe(inTripB.body.activity.orderIndex);
+
+    const tripAActivities = await owner.agent.get(`/api/trips/${tripA.id}/activities`);
+    expect(tripAActivities.body.activities).toHaveLength(1);
+    expect(tripAActivities.body.activities[0].id).toBe(inTripA.body.activity.id);
+  });
 });
