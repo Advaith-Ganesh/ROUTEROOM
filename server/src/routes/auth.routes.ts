@@ -27,9 +27,19 @@ const normalizedEmail = z
   .toLowerCase()
   .email('Invalid email address');
 
+// Beyond a bare length check: require at least one letter and one number so
+// registration rejects the weakest common passwords (e.g. "12345678") while
+// staying simple -- no mandatory symbols/casing, which mostly just push
+// people toward "Password1!" and a sticky note.
+const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .refine((value) => /[a-zA-Z]/.test(value), 'Password must contain at least one letter')
+  .refine((value) => /[0-9]/.test(value), 'Password must contain at least one number');
+
 const registerSchema = z.object({
   email: normalizedEmail,
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: passwordSchema,
   name: z.string().trim().min(1, 'Name is required').max(100),
 });
 

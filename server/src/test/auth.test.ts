@@ -50,18 +50,41 @@ describe('auth', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a password with only letters or only numbers', async () => {
+    const app = buildApp();
+
+    const lettersOnly = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'weak1@example.com', password: 'onlyletters', name: 'Weak' });
+    expect(lettersOnly.status).toBe(400);
+
+    const numbersOnly = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'weak2@example.com', password: '12345678', name: 'Weak' });
+    expect(numbersOnly.status).toBe(400);
+  });
+
+  it('trims whitespace and rejects a name that is only whitespace', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ email: 'blankname@example.com', password: 'password123', name: '   ' });
+
+    expect(res.status).toBe(400);
+  });
+
   it('logs in with correct credentials and rejects incorrect ones', async () => {
     const app = buildApp();
-    await createTestUser(app, { email: 'login@example.com', password: 'correct-password' });
+    await createTestUser(app, { email: 'login@example.com', password: 'correct-password1' });
 
     const good = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'login@example.com', password: 'correct-password' });
+      .send({ email: 'login@example.com', password: 'correct-password1' });
     expect(good.status).toBe(200);
 
     const bad = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'login@example.com', password: 'wrong-password' });
+      .send({ email: 'login@example.com', password: 'wrong-password1' });
     expect(bad.status).toBe(401);
   });
 
