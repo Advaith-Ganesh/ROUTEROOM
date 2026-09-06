@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { searchPlaces } from '../services/geocoding.service.js';
 import { buildApp, createTestPlace, createTestTrip, createTestUser } from './helpers.js';
 
+const broadcastMock = vi.fn();
+vi.mock('../realtime/ws.js', () => ({ broadcastTripUpdate: (...args: unknown[]) => broadcastMock(...args) }));
+
 describe('geocoding service', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -53,6 +56,25 @@ describe('geocoding service', () => {
 });
 
 describe('places API', () => {
+  it('broadcasts a websocket update when a place is saved or removed', async () => {
+    const app = buildApp();
+    const owner = await createTestUser(app);
+    const trip = await createTestTrip(owner);
+
+    const saveRes = await owner.agent.post(`/api/trips/${trip.id}/places`).send({
+      externalId: 'ws-test',
+      name: 'Test Place',
+      address: '1 Test Street',
+      category: null,
+      lat: 1,
+      lon: 1,
+    });
+    expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'place:created');
+
+    await owner.agent.delete(`/api/trips/${trip.id}/places/${saveRes.body.place.id}`);
+    expect(broadcastMock).toHaveBeenCalledWith(trip.id, 'place:deleted');
+  });
+
   it('prevents deleting a place that is still used by an activity', async () => {
     const app = buildApp();
     const owner = await createTestUser(app);

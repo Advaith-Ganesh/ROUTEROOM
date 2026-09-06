@@ -6,6 +6,7 @@ import { requireTripRole } from '../middleware/tripAccess.js';
 import { searchPlaces } from '../services/geocoding.service.js';
 import * as places from '../services/places.service.js';
 import { HttpError } from '../utils/httpError.js';
+import { broadcastTripUpdate } from '../realtime/ws.js';
 
 /** Trip-scoped: list saved places / save a search result / remove a saved place. */
 export const placesRouter = Router({ mergeParams: true });
@@ -34,6 +35,7 @@ placesRouter.post(
   asyncHandler(async (req, res) => {
     const input = saveSchema.parse(req.body);
     const place = await places.savePlace(req.params.tripId as string, input);
+    broadcastTripUpdate(req.params.tripId as string, 'place:created');
     res.status(201).json({ place });
   }),
 );
@@ -43,6 +45,7 @@ placesRouter.delete(
   requireTripRole('EDITOR'),
   asyncHandler(async (req, res) => {
     await places.deletePlace(req.params.tripId as string, req.params.placeId as string);
+    broadcastTripUpdate(req.params.tripId as string, 'place:deleted');
     res.status(204).send();
   }),
 );
