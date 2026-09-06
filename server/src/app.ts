@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { pinoHttp } from 'pino-http';
 import { corsOrigins } from './config/env.js';
@@ -19,6 +20,11 @@ export function createApp() {
   const app = express();
 
   app.set('trust proxy', 1);
+  // This is a JSON API with no server-rendered HTML, so the default CSP
+  // (meant for pages loading scripts/styles) has nothing to protect here;
+  // disabling it avoids sending an irrelevant header while keeping the
+  // other hardening headers (frame options, no-sniff, HSTS, etc.).
+  app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: corsOrigins, credentials: true }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
